@@ -1,4 +1,4 @@
--- KS-Rivals Script Hub (Enhanced Auto-Reload & Fixed Config System)
+-- KS-Rivals Script Hub (Enhanced Auto-Reload & Fixed Config/Notification System)
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -111,6 +111,9 @@ end)
 for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
     if gui.Name == "KSRivals_Hub" then gui:Destroy() end
 end
+for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
+    if gui.Name == "NotificationSystem" then gui:Destroy() end
+end
 
 local KSRivals = Instance.new("ScreenGui")
 KSRivals.Name = "KSRivals_Hub"
@@ -136,7 +139,7 @@ TopBar.BackgroundTransparency = 1
 TopBar.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
-Title.Text = "KS-Rivals - Advanced Auto-Match System"
+Title.Text = "KS-Rivals - Advanced Hub"
 Title.Font = Enum.Font.Code
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 13
@@ -309,7 +312,6 @@ local function CreateToggle(name, parent, callback, configType, defaultValue)
             configBtn.MouseButton1Click:Connect(function()
                 AUTO_AIM_MODE = (AUTO_AIM_MODE == "Silent") and "Aim" or "Silent"
                 configBtn.Text = AUTO_AIM_MODE
-                -- 11번 요청 사항 로직 적용
                 if AUTO_AIM_ENABLED then
                     if AUTO_AIM_MODE == "Silent" then
                         UIHandlers.UpdateSilentAim(true)
@@ -367,7 +369,99 @@ VisualList.Padding = UDim.new(0, 4)
 VisualList.Parent = VisualPage
 
 -- ============================================
--- AUTO MATCH SYSTEM (Loop Execution)
+-- NOTIFICATION SYSTEM (Logic & Tracking)
+-- ============================================
+
+local NotificationGui = Instance.new("ScreenGui")
+NotificationGui.Name = "NotificationSystem"
+NotificationGui.ResetOnSpawn = false
+NotificationGui.Parent = (game:GetService("CoreGui") or LocalPlayer.PlayerGui)
+
+local NotifContainer = Instance.new("Frame")
+NotifContainer.Size = UDim2.new(0, 250, 0, 400)
+NotifContainer.Position = UDim2.new(0, 10, 0, 10)
+NotifContainer.BackgroundTransparency = 1
+NotifContainer.Parent = NotificationGui
+
+local NotifLayout = Instance.new("UIListLayout")
+NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+NotifLayout.Padding = UDim.new(0, 4)
+NotifLayout.Parent = NotifContainer
+
+local function createNotification(text, color)
+    if not NOTIFICATION_ENABLED then return end
+    
+    local notif = Instance.new("Frame")
+    notif.Size = UDim2.new(1, 0, 0, 24)
+    notif.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    notif.BackgroundTransparency = 0.4
+    notif.BorderSizePixel = 0
+    notif.Parent = NotifContainer
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 1, 0)
+    label.Position = UDim2.new(0, 5, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = color or Color3.new(1, 1, 1)
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = notif
+    
+    task.delay(2, function()
+        if notif then 
+            local t = TweenService:Create(notif, TweenInfo.new(0.5), {BackgroundTransparency = 1})
+            local t2 = TweenService:Create(label, TweenInfo.new(0.5), {TextTransparency = 1})
+            t:Play() t2:Play()
+            t.Completed:Connect(function() notif:Destroy() end)
+        end
+    end)
+end
+
+-- 체력 감지 및 킬 알림 로직
+local trackedHealth = {}
+local function trackPlayer(p)
+    if p == LocalPlayer then return end
+    p.CharacterAdded:Connect(function(char)
+        local hum = char:WaitForChild("Humanoid", 10)
+        if hum then
+            trackedHealth[p.UserId] = hum.Health
+            hum.HealthChanged:Connect(function(health)
+                local last = trackedHealth[p.UserId] or 100
+                local diff = last - health
+                if diff > 0 then
+                    createNotification(string.format("Hit %s -%d", p.Name, math.floor(diff)), Color3.fromRGB(255, 70, 70))
+                end
+                trackedHealth[p.UserId] = health
+            end)
+            hum.Died:Connect(function()
+                createNotification(string.format("Killed %s", p.Name), Color3.fromRGB(200, 0, 255))
+            end)
+        end
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do trackPlayer(p) end
+Players.PlayerAdded:Connect(trackPlayer)
+
+-- 자신 데미지 감지
+LocalPlayer.CharacterAdded:Connect(function(char)
+    local hum = char:WaitForChild("Humanoid", 10)
+    if hum then
+        local lastH = hum.Health
+        hum.HealthChanged:Connect(function(health)
+            local diff = lastH - health
+            if diff > 0 then
+                createNotification(string.format("Damage Received: -%d", math.floor(diff)), Color3.fromRGB(255, 150, 0))
+            end
+            lastH = health
+        end)
+    end
+end)
+
+-- ============================================
+-- AUTO MATCH SYSTEM
 -- ============================================
 
 local function attemptJoinMatch()
@@ -378,52 +472,11 @@ local function attemptJoinMatch()
     end)
 end
 
--- 1초마다 실행되는 루프 (ON 상태일 때 계속 작동)
 task.spawn(function()
     while task.wait(1) do
-        if AUTO_MATCH_ENABLED then
-            attemptJoinMatch()
-        end
+        if AUTO_MATCH_ENABLED then attemptJoinMatch() end
     end
 end)
-
--- ============================================
--- NOTIFICATION SYSTEM
--- ============================================
-
-local NotificationGui = Instance.new("ScreenGui")
-NotificationGui.Name = "NotificationSystem"
-NotificationGui.Parent = LocalPlayer.PlayerGui
-local NotifContainer = Instance.new("Frame")
-NotifContainer.Size = UDim2.new(0, 200, 0, 300)
-NotifContainer.Position = UDim2.new(0, 10, 0, 10)
-NotifContainer.BackgroundTransparency = 1
-NotifContainer.Parent = NotificationGui
-local NotifLayout = Instance.new("UIListLayout")
-NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
-NotifLayout.Padding = UDim.new(0, 3)
-NotifLayout.Parent = NotifContainer
-
-local function createNotification(text, color)
-    if not NOTIFICATION_ENABLED then return end
-    local notif = Instance.new("Frame")
-    notif.Size = UDim2.new(1, 0, 0, 22)
-    notif.BackgroundColor3 = Color3.new(0, 0, 0)
-    notif.BackgroundTransparency = 0.3
-    notif.BorderSizePixel = 0
-    notif.Parent = NotifContainer
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -6, 1, 0)
-    label.Position = UDim2.new(0, 3, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = color or Color3.new(1, 1, 1)
-    label.TextSize = 12
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = notif
-    task.delay(1.5, function() if notif then notif:Destroy() end end)
-end
 
 -- ============================================
 -- AIM LOGIC
@@ -561,7 +614,7 @@ for _, p in pairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
 -- ============================================
--- UI TO TOGGLE ASSIGNMENT (Saving Connect)
+-- UI TOGGLE ASSIGNMENT
 -- ============================================
 
 UIHandlers.UpdateSilentAim = CreateToggle("enabled (silent aim)", AimPage, function(v) SILENT_AIM_ENABLED = v end, nil, SILENT_AIM_ENABLED)
@@ -599,7 +652,7 @@ CreateButton("mesh wrapping", VisualPage, function()
 end)
 
 -- ============================================
--- INITIAL EXECUTION & UI MANAGEMENT
+-- INITIALIZATION & UI DRAG
 -- ============================================
 
 local dragging, dragStart, startPos
@@ -617,4 +670,4 @@ if AUTO_AIM_ENABLED then
     else UIHandlers.UpdateSilentAim(false) UIHandlers.UpdateAimLock(true) end
 end
 ShowTab("Aim")
-print("[KS-Rivals] Hub Active. Auto-Match Loop Started.")
+print("[KS-Rivals] Hub Active. Notifications Ready.")
