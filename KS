@@ -1,4 +1,4 @@
--- KS-Rivals Script Hub (Fixed Auto-Aim Visibility Logic)
+-- KS-Rivals Script Hub (Fixed Silent Auto-Click Visibility)
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,7 +10,7 @@ local Mouse = LocalPlayer:GetMouse()
 local Camera = workspace.CurrentCamera
 
 -- ============================================
--- CONFIG SYSTEM
+-- CONFIG SYSTEM (Global Variables)
 -- ============================================
 
 local ESP_ENABLED = false
@@ -67,6 +67,7 @@ if savedConfig then
     AUTO_MATCH_ENABLED = savedConfig.AUTO_MATCH_ENABLED or false
     AUTO_AIM_MODE = savedConfig.AUTO_AIM_MODE or "Silent"
     AUTO_MATCH_MODE = savedConfig.AUTO_MATCH_MODE or "1v1"
+    
     if savedConfig.AIM_LOCK_KEY then
         if savedConfig.AIM_LOCK_KEY:find("MouseButton") then
             AIM_LOCK_KEY = Enum.UserInputType[savedConfig.AIM_LOCK_KEY:split(".")[3]]
@@ -93,54 +94,17 @@ local function setupAutoReload()
     local qot = syn and syn.queue_on_teleport or queue_on_teleport or queueonteleport
     if qot then qot(BOOTSTRAP_CODE) end
 end
+
 setupAutoReload()
 LocalPlayer.OnTeleport:Connect(function(state)
-    if state == Enum.TeleportState.Started then saveConfig() setupAutoReload() end
+    if state == Enum.TeleportState.Started then
+        saveConfig()
+        setupAutoReload()
+    end
 end)
 
 -- ============================================
--- HELPER FUNCTIONS (Visibility & Logic)
--- ============================================
-
--- 플레이어가 벽 뒤에 있는지 확인하는 핵심 함수
-local function isTargetVisible(player)
-    if not player.Character or not player.Character:FindFirstChild("Head") then return false end
-    local char = player.Character
-    local head = char.Head
-    
-    -- 화면 안에 있는지 먼저 확인
-    local _, onScreen = Camera:WorldToViewportPoint(head.Position)
-    if not onScreen then return false end
-
-    -- Raycast로 시야 방해물 확인
-    local rayParam = RaycastParams.new()
-    rayParam.FilterType = Enum.RaycastFilterType.Exclude
-    rayParam.FilterDescendantsInstances = {LocalPlayer.Character, char} -- 본인과 타겟 캐릭터 제외
-    
-    local rayResult = workspace:Raycast(Camera.CFrame.Position, (head.Position - Camera.CFrame.Position), rayParam)
-    
-    -- Ray가 아무것도 안 맞히면 시야가 확보된 것임
-    return rayResult == nil
-end
-
-local function getClosestVisiblePlayer()
-    local closest, shortestDist = nil, math.huge
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            if isTargetVisible(p) then
-                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-                if dist < shortestDist then
-                    shortestDist = dist
-                    closest = p
-                end
-            end
-        end
-    end
-    return closest
-end
-
--- ============================================
--- UI SETUP (Main Hub)
+-- UI SETUP
 -- ============================================
 
 for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
@@ -251,44 +215,48 @@ VisualTab.MouseButton1Click:Connect(function() ShowTab("Visual") end)
 -- NOTIFICATION SYSTEM
 -- ============================================
 
+for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
+    if gui.Name == "NotificationSystem" then gui:Destroy() end
+end
+
+local NotificationGui = Instance.new("ScreenGui")
+NotificationGui.Name = "NotificationSystem"
+NotificationGui.Parent = LocalPlayer.PlayerGui
+NotificationGui.ResetOnSpawn = false
+
+local NotifContainer = Instance.new("Frame")
+NotifContainer.Size = UDim2.new(0, 200, 0, 400)
+NotifContainer.Position = UDim2.new(0, 10, 0, 10)
+NotifContainer.BackgroundTransparency = 1
+NotifContainer.Parent = NotificationGui
+
+local NotifLayout = Instance.new("UIListLayout")
+NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+NotifLayout.Padding = UDim.new(0, 4)
+NotifLayout.Parent = NotifContainer
+
 local function createNotification(text)
     if not NOTIFICATION_ENABLED then return end
-    local notifGui = (game:GetService("CoreGui"):FindFirstChild("NotificationSystem") or Instance.new("ScreenGui", game:GetService("CoreGui")))
-    notifGui.Name = "NotificationSystem"
-    
-    local container = notifGui:FindFirstChild("Container") or Instance.new("Frame", notifGui)
-    if not container.Name then
-        container.Name = "Container"
-        container.Size = UDim2.new(0, 200, 0, 400)
-        container.Position = UDim2.new(0, 10, 0, 10)
-        container.BackgroundTransparency = 1
-        local layout = Instance.new("UIListLayout", container)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Padding = UDim.new(0, 4)
-    end
-
-    local notif = Instance.new("Frame", container)
+    local notif = Instance.new("Frame")
     notif.Size = UDim2.new(0, 0, 0, 22)
-    notif.BackgroundColor3 = Color3.new(0,0,0)
+    notif.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     notif.BackgroundTransparency = 0.2
     notif.BorderSizePixel = 0
     notif.ClipsDescendants = true
+    notif.Parent = NotifContainer
+    local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0, 4) corner.Parent = notif
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 1, 0) label.Position = UDim2.new(0, 5, 0, 0) label.BackgroundTransparency = 1
+    label.Text = text label.TextColor3 = Color3.fromRGB(255, 255, 255) label.TextSize = 12
+    label.Font = Enum.Font.GothamBold label.TextXAlignment = Enum.TextXAlignment.Left label.Parent = notif
     
-    local label = Instance.new("TextLabel", notif)
-    label.Size = UDim2.new(1, -10, 1, 0)
-    label.Position = UDim2.new(0, 5, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Color3.new(1,1,1)
-    label.TextSize = 12
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    TweenService:Create(notif, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 0, 22)}):Play()
+    TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 22)}):Play()
     task.delay(2, function()
-        local tw = TweenService:Create(notif, TweenInfo.new(0.3), {Size = UDim2.new(0, 0, 0, 22)})
-        tw:Play()
-        tw.Completed:Connect(function() notif:Destroy() end)
+        if notif then
+            local closeTween = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 22)})
+            closeTween:Play()
+            closeTween.Completed:Connect(function() notif:Destroy() end)
+        end
     end)
 end
 
@@ -362,7 +330,6 @@ local function CreateToggle(name, parent, callback, configType, defaultValue)
         configBtn.TextSize = 11
         configBtn.BorderSizePixel = 0
         configBtn.Parent = container
-
         local configStroke = Instance.new("UIStroke")
         configStroke.Color = Color3.fromRGB(255, 255, 255)
         configStroke.Thickness = 1
@@ -438,7 +405,7 @@ VisualList.Padding = UDim.new(0, 4)
 VisualList.Parent = VisualPage
 
 -- ============================================
--- MAIN LOOP (Auto Match, Tracking)
+-- GAME LOGIC (Matchmaking & Helper)
 -- ============================================
 
 local function attemptJoinMatch()
@@ -453,13 +420,44 @@ task.spawn(function()
     while task.wait(1) do if AUTO_MATCH_ENABLED then attemptJoinMatch() end end
 end)
 
+local function isVisible(p)
+    if not p.Character or not p.Character:FindFirstChild("Head") then return false end
+    local head = p.Character.Head
+    local origin = Camera.CFrame.Position
+    local direction = head.Position - origin
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    local result = workspace:Raycast(origin, direction, rayParams)
+    
+    if result then
+        return result.Instance:IsDescendantOf(p.Character)
+    end
+    return false
+end
+
 -- ============================================
--- AIM & CLICK LOGIC (Visibility Fixed)
+-- AIM LOGIC
 -- ============================================
+
+local function getClosestPlayer()
+    local closest, shortestDist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character.Humanoid.Health > 0 then
+            local head = p.Character.Head
+            local _, onScreen = Camera:WorldToScreenPoint(head.Position)
+            if onScreen then
+                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - head.Position).Magnitude
+                if dist < shortestDist then shortestDist = dist closest = p end
+            end
+        end
+    end
+    return closest
+end
 
 local function updateAimLock()
     if not isAimLockHeld or not AIM_LOCK_ENABLED then return end
-    local t = getClosestVisiblePlayer() -- 시야에 보이는 플레이어만 Aim Lock
+    local t = getClosestPlayer()
     if t and t.Character:FindFirstChild("Head") then
         local pos = Camera:WorldToScreenPoint(t.Character.Head.Position)
         mousemoverel(math.floor(pos.X - Mouse.X + 0.5), math.floor(pos.Y - Mouse.Y + 0.5))
@@ -472,8 +470,8 @@ UserInputService.InputBegan:Connect(function(i, gpe)
         if aimLockConnection then aimLockConnection:Disconnect() end
         aimLockConnection = RunService.RenderStepped:Connect(updateAimLock)
     elseif not gpe and SILENT_AIM_ENABLED and i.UserInputType == Enum.UserInputType.MouseButton1 then
-        local t = getClosestVisiblePlayer() -- 시야에 보이는 적에게만 Silent Aim
-        if t then Camera.CFrame = CFrame.new(Camera.CFrame.Position, t.Character.Head.Position) end
+        local t = getClosestPlayer()
+        if t and isVisible(t) then Camera.CFrame = CFrame.new(Camera.CFrame.Position, t.Character.Head.Position) end
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
@@ -483,24 +481,19 @@ UserInputService.InputEnded:Connect(function(i)
     end
 end)
 
--- [핵심 수정 부분] Auto Click 로직
+-- Auto Aim Main Loop (Corrected Silent Check)
 RunService.RenderStepped:Connect(function()
     if not AUTO_AIM_ENABLED or MainFrame.Visible then return end
-    
     local targetFound = false
     
     if AUTO_AIM_MODE == "Silent" then
-        -- Silent 모드일 때: 화면 내에 장애물 없이 보이는 적이 있다면 타겟팅
-        local t = getClosestVisiblePlayer()
-        if t then targetFound = true end
+        local t = getClosestPlayer()
+        -- 핵심 수정: 적이 존재하고, '가시성(Visible)'이 확보되었을 때만 클릭
+        if t and isVisible(t) then targetFound = true end
     elseif AUTO_AIM_MODE == "Aim" then
-        -- Aim 모드일 때: 마우스가 가리키는 대상이 플레이어일 때만 타겟팅
-        local target = Mouse.Target
-        if target and target.Parent then
-            local p = Players:GetPlayerFromCharacter(target.Parent) or Players:GetPlayerFromCharacter(target.Parent.Parent)
-            if p and p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-                targetFound = true
-            end
+        if Mouse.Target then
+            local p = Players:GetPlayerFromCharacter(Mouse.Target.Parent) or Players:GetPlayerFromCharacter(Mouse.Target.Parent.Parent)
+            if p and p ~= LocalPlayer and p.Character and p.Character.Humanoid.Health > 0 then targetFound = true end
         end
     end
     
@@ -535,21 +528,17 @@ local function createESP(player)
         local root = char:WaitForChild("HumanoidRootPart", 5)
         local hum = char:WaitForChild("Humanoid", 5)
         if not root or not hum then return end
-        
         local bGui = Instance.new("BillboardGui", root)
         bGui.Name = "ESP_Gui" bGui.Size = UDim2.new(4,0,5.5,0) bGui.AlwaysOnTop = true bGui.Enabled = ESP_ENABLED
         local function line(s, p)
             local f = Instance.new("Frame", bGui) f.BackgroundColor3 = Color3.new(1,1,1) f.BorderSizePixel = 0 f.Size = s f.Position = p return f
         end
-        line(UDim2.new(1,0,0,1), UDim2.new(0,0,0,0))
-        line(UDim2.new(1,0,0,1), UDim2.new(0,0,1,-1))
-        line(UDim2.new(0,1,1,0), UDim2.new(0,0,0,0))
-        line(UDim2.new(0,1,1,0), UDim2.new(1,-1,0,0))
-
+        line(UDim2.new(1,0,0,1), UDim2.new(0,0,0,0)) line(UDim2.new(1,0,0,1), UDim2.new(0,0,1,-1))
+        line(UDim2.new(0,1,1,0), UDim2.new(0,0,0,0)) line(UDim2.new(0,1,1,0), UDim2.new(1,-1,0,0))
         local hGui = Instance.new("BillboardGui", root)
         hGui.Name = "HealthESP_Gui" hGui.Size = UDim2.new(1,0,5.5,0) hGui.StudsOffset = Vector3.new(2.5,0,0) hGui.AlwaysOnTop = true hGui.Enabled = HP_BAR_ENABLED
-        local barBg = Instance.new("Frame", hGui) barBg.Size = UDim2.new(0.2,0,1,0) barBg.BackgroundColor3 = Color3.fromRGB(50,50,50) barBg.BorderSizePixel = 0
-        local hFill = Instance.new("Frame", barBg) hFill.Size = UDim2.new(1,0,1,0) hFill.Position = UDim2.new(0,0,1,0) hFill.AnchorPoint = Vector2.new(0,1) hFill.BackgroundColor3 = Color3.fromRGB(0,255,0) hFill.BorderSizePixel = 0
+        local barBg = Instance.new("Frame", hGui) barBg.Size = UDim2.new(0.2,0,1,0) barBg.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        local hFill = Instance.new("Frame", barBg) hFill.Size = UDim2.new(1,0,1,0) hFill.Position = UDim2.new(0,0,1,0) hFill.AnchorPoint = Vector2.new(0,1) hFill.BackgroundColor3 = Color3.fromRGB(0,255,0)
         local hText = Instance.new("TextLabel", barBg) hText.Size = UDim2.new(3,0,0.2,0) hText.Position = UDim2.new(1.2,0,0,0) hText.BackgroundTransparency = 1 hText.TextColor3 = Color3.new(1,1,1) hText.TextScaled = true hText.Font = Enum.Font.SourceSansBold
         local function update()
             local p = math.clamp(hum.Health/hum.MaxHealth, 0, 1)
@@ -601,7 +590,7 @@ CreateButton("mesh wrapping", VisualPage, function()
     end
 end)
 
--- UI Control
+-- Drag Logic
 local dragging, dragStart, startPos
 MainFrame.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true dragStart = input.Position startPos = MainFrame.Position end end)
 UserInputService.InputChanged:Connect(function(input) if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then local delta = input.Position - dragStart MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end end)
