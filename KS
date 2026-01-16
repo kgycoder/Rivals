@@ -136,7 +136,7 @@ TopBar.BackgroundTransparency = 1
 TopBar.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
-Title.Text = "KS-Rivals - Hub"
+Title.Text = "KS-Rivals - Advanced Auto-Match System"
 Title.Font = Enum.Font.Code
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 13
@@ -372,84 +372,79 @@ VisualList.Parent = VisualPage
 local NotificationGui = Instance.new("ScreenGui")
 NotificationGui.Name = "NotificationSystem"
 NotificationGui.Parent = (game:GetService("CoreGui") or LocalPlayer.PlayerGui)
-NotificationGui.DisplayOrder = 999
+NotificationGui.ResetOnSpawn = false
 
 local NotifContainer = Instance.new("Frame")
-NotifContainer.Size = UDim2.new(0, 250, 0, 400)
-NotifContainer.Position = UDim2.new(0, 15, 0, 15)
+NotifContainer.Size = UDim2.new(0, 200, 0, 300)
+NotifContainer.Position = UDim2.new(0, 10, 0, 10)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.Parent = NotificationGui
 
 local NotifLayout = Instance.new("UIListLayout")
 NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
-NotifLayout.Padding = UDim.new(0, 4)
+NotifLayout.Padding = UDim.new(0, 3)
 NotifLayout.Parent = NotifContainer
 
 local function createNotification(text, color)
     if not NOTIFICATION_ENABLED then return end
     
     local notif = Instance.new("Frame")
-    notif.Size = UDim2.new(1, 0, 0, 24)
+    notif.Size = UDim2.new(1, 0, 0, 22)
     notif.BackgroundColor3 = Color3.new(0, 0, 0)
-    notif.BackgroundTransparency = 0.4
+    notif.BackgroundTransparency = 0.3
     notif.BorderSizePixel = 0
     notif.Parent = NotifContainer
     
-    local uic = Instance.new("UICorner")
-    uic.CornerRadius = UDim.new(0, 4)
-    uic.Parent = notif
-
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -10, 1, 0)
-    label.Position = UDim2.new(0, 10, 0, 0)
+    label.Size = UDim2.new(1, -6, 1, 0)
+    label.Position = UDim2.new(0, 3, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = color or Color3.new(1, 1, 1)
-    label.TextSize = 13
+    label.TextSize = 12
     label.Font = Enum.Font.GothamBold
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = notif
     
-    -- Animation
-    notif.Position = UDim2.new(-1, 0, 0, 0)
-    TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Position = UDim2.new(0, 0, 0, 0)}):Play()
-    
-    task.delay(2, function()
-        if notif then
-            local tw = TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency = 1})
-            TweenService:Create(label, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-            tw:Play()
-            tw.Completed:Connect(function() notif:Destroy() end)
-        end
+    task.delay(1.5, function() 
+        if notif then 
+            local t = TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency = 1})
+            local t2 = TweenService:Create(label, TweenInfo.new(0.3), {TextTransparency = 1})
+            t:Play() t2:Play()
+            t.Completed:Connect(function() notif:Destroy() end)
+        end 
     end)
 end
 
--- Damage/Kill Tracking Logic
+-- Trackers
 local trackedPlayers = {}
-local function trackPlayer(otherPlayer)
-    if otherPlayer == LocalPlayer then return end
-    local function onChar(char)
-        local hum = char:WaitForChild("Humanoid", 10)
-        if not hum then return end
-        local lastHealth = hum.Health
-        hum.HealthChanged:Connect(function(newHealth)
-            if newHealth < lastHealth then
-                createNotification("Hit " .. otherPlayer.Name .. " -" .. math.floor(lastHealth - newHealth), Color3.fromRGB(255, 70, 70))
-            end
-            lastHealth = newHealth
+local function setupTracking(p)
+    if p == LocalPlayer then 
+        p.CharacterAdded:Connect(function(char)
+            local hum = char:WaitForChild("Humanoid")
+            local lastH = hum.Health
+            hum.HealthChanged:Connect(function(h)
+                if h < lastH then createNotification("Damage -"..math.floor(lastH-h), Color3.new(1,0,0)) end
+                lastH = h
+            end)
         end)
-        hum.Died:Connect(function()
-            createNotification("Killed " .. otherPlayer.Name, Color3.fromRGB(255, 255, 0))
-        end)
+        return 
     end
-    otherPlayer.CharacterAdded:Connect(onChar)
-    if otherPlayer.Character then onChar(otherPlayer.Character) end
+    p.CharacterAdded:Connect(function(char)
+        local hum = char:WaitForChild("Humanoid")
+        local lastH = hum.Health
+        hum.HealthChanged:Connect(function(h)
+            if h < lastH then createNotification("Hit "..p.Name.." -"..math.floor(lastH-h), Color3.new(1,1,1)) end
+            lastH = h
+        end)
+        hum.Died:Connect(function() createNotification("Killed "..p.Name, Color3.new(1,0,1)) end)
+    end)
 end
-for _, p in ipairs(Players:GetPlayers()) do trackPlayer(p) end
-Players.PlayerAdded:Connect(trackPlayer)
+for _, p in ipairs(Players:GetPlayers()) do setupTracking(p) end
+Players.PlayerAdded:Connect(setupTracking)
 
 -- ============================================
--- AUTO MATCH SYSTEM (Loop Execution)
+-- AUTO MATCH SYSTEM
 -- ============================================
 
 local function attemptJoinMatch()
@@ -462,9 +457,7 @@ end
 
 task.spawn(function()
     while task.wait(1) do
-        if AUTO_MATCH_ENABLED then
-            attemptJoinMatch()
-        end
+        if AUTO_MATCH_ENABLED then attemptJoinMatch() end
     end
 end)
 
@@ -660,4 +653,4 @@ if AUTO_AIM_ENABLED then
     else UIHandlers.UpdateSilentAim(false) UIHandlers.UpdateAimLock(true) end
 end
 ShowTab("Aim")
-createNotification("KS-Rivals Loaded Successfully", Color3.new(0, 1, 0))
+print("[KS-Rivals] Notification Fixed. Hub Active.")
