@@ -28,6 +28,16 @@ local aimLockConnection
 local lastClickTime = 0
 local CLICK_INTERVAL = 0.12
 
+-- 키 명칭 수정 함수 (MouseButton1 -> MB1)
+local function formatKeyName(key)
+    local name = tostring(key):split(".")[3]
+    if name == "MouseButton1" then return "MB1"
+    elseif name == "MouseButton2" then return "MB2"
+    elseif name == "MouseButton3" then return "MB3"
+    end
+    return name
+end
+
 local function saveConfig()
     local config = {
         ESP_ENABLED = ESP_ENABLED,
@@ -71,17 +81,15 @@ if savedConfig then
     
     if savedConfig.AIM_LOCK_KEY then
         if savedConfig.AIM_LOCK_KEY:find("MouseButton") then
-            local keyName = savedConfig.AIM_LOCK_KEY:split(".")[3]
-            AIM_LOCK_KEY = Enum.UserInputType[keyName]
+            AIM_LOCK_KEY = Enum.UserInputType[savedConfig.AIM_LOCK_KEY:split(".")[3]]
         else
-            local keyName = savedConfig.AIM_LOCK_KEY:split(".")[3]
-            AIM_LOCK_KEY = Enum.KeyCode[keyName]
+            AIM_LOCK_KEY = Enum.KeyCode[savedConfig.AIM_LOCK_KEY:split(".")[3]]
         end
     end
 end
 
 -- ============================================
--- AUTO-RELOAD SYSTEM (Updated URL)
+-- AUTO-RELOAD SYSTEM
 -- ============================================
 
 local SCRIPT_URL = "https://raw.githubusercontent.com/kgycoder/Rivals/refs/heads/main/KS"
@@ -215,7 +223,7 @@ AimTab.MouseButton1Click:Connect(function() ShowTab("Aim") end)
 VisualTab.MouseButton1Click:Connect(function() ShowTab("Visual") end)
 
 -- ============================================
--- UI COMPONENTS (Toggle, Button)
+-- UI COMPONENTS
 -- ============================================
 
 local function CreateToggle(name, parent, callback, configType, defaultValue)
@@ -285,7 +293,7 @@ local function CreateToggle(name, parent, callback, configType, defaultValue)
         configStroke.Parent = configBtn
 
         if configType == "Keybind" then
-            configBtn.Text = "[" .. (AIM_LOCK_KEY.Name) .. "]"
+            configBtn.Text = "[" .. formatKeyName(AIM_LOCK_KEY) .. "]"
             configBtn.MouseButton1Click:Connect(function()
                 configBtn.Text = "..."
                 local inputConn
@@ -293,7 +301,7 @@ local function CreateToggle(name, parent, callback, configType, defaultValue)
                     local newBind = input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode or input.UserInputType
                     if newBind ~= Enum.UserInputType.MouseMovement then
                         AIM_LOCK_KEY = newBind
-                        configBtn.Text = "[" .. (input.KeyCode.Name ~= "Unknown" and input.KeyCode.Name or input.UserInputType.Name) .. "]"
+                        configBtn.Text = "[" .. formatKeyName(newBind) .. "]"
                         saveConfig()
                         inputConn:Disconnect()
                     end
@@ -352,7 +360,7 @@ VisualList.Padding = UDim.new(0, 4)
 VisualList.Parent = VisualPage
 
 -- ============================================
--- AUTO MATCH (1 SEC LOOP)
+-- AUTO MATCH SYSTEM (Modified for Loop)
 -- ============================================
 
 local function joinMatchmaking()
@@ -362,7 +370,7 @@ local function joinMatchmaking()
     end)
 end
 
--- 1초마다 루프 실행 (토글이 ON일 때만 작동)
+-- 1초 주기 무한 루프 로직
 task.spawn(function()
     while task.wait(1) do
         if AUTO_MATCH_ENABLED then
@@ -545,7 +553,7 @@ for _, p in pairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
 -- ============================================
--- UI TOGGLE ASSIGNMENT (Saving Connect)
+-- UI INITIALIZATION & HANDLERS
 -- ============================================
 
 UIHandlers.UpdateSilentAim = CreateToggle("enabled (silent aim)", AimPage, function(v) SILENT_AIM_ENABLED = v end, nil, SILENT_AIM_ENABLED)
@@ -553,13 +561,13 @@ UIHandlers.UpdateAimLock = CreateToggle("Aim Lock", AimPage, function(v) AIM_LOC
 UIHandlers.UpdateAutoAim = CreateToggle("Auto Aim", AimPage, function(v) 
     AUTO_AIM_ENABLED = v 
     if v then
-        if AUTO_AIM_MODE == "Silent" then SILENT_AIM_ENABLED = true else AIM_LOCK_ENABLED = true end
+        if AUTO_AIM_MODE == "Silent" then UIHandlers.UpdateSilentAim(true) UIHandlers.UpdateAimLock(false)
+        else UIHandlers.UpdateSilentAim(false) UIHandlers.UpdateAimLock(true) end
     end
 end, "AimMode", AUTO_AIM_ENABLED)
 
 UIHandlers.UpdateAutoMatch = CreateToggle("Auto Match", AimPage, function(v) 
     AUTO_MATCH_ENABLED = v
-    if v then joinMatchmaking() end
 end, "MatchMode", AUTO_MATCH_ENABLED)
 
 CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v updateESPStates() end, nil, ESP_ENABLED)
@@ -573,16 +581,12 @@ CreateButton("mesh wrapping", VisualPage, function()
     local function setup(m)
         if not m:IsA("MeshPart") then return end
         m.Material, m.Color = Enum.Material.ForceField, Color3.new(0,0,0)
-        for _, f in ipairs({Enum.NormalId.Top, Enum.NormalId.Bottom, Enum.NormalId.Left, Enum.NormalId.Right, Enum.NormalId.Front, Enum.NormalId.Back}) do
-            local t = m:FindFirstChild("FixedTexture_"..f.Name) or Instance.new("Texture", m)
-            t.Name, t.Texture, t.Face, t.Color3, t.StudsPerTileU, t.StudsPerTileV = "FixedTexture_"..f.Name, "rbxassetid://135989547473439", f, Color3.new(0,0,0), 0.1, 0.1
-        end
     end
     for _, o in ipairs(FP:GetDescendants()) do setup(o) end
 end)
 
 -- ============================================
--- UI MANAGEMENT (Drag & Toggle)
+-- UI DRAG & TOGGLE
 -- ============================================
 
 local dragging, dragStart, startPos
@@ -594,4 +598,4 @@ CloseBtn.MouseButton1Click:Connect(ToggleUI)
 UserInputService.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then ToggleUI() end end)
 
 ShowTab("Aim")
-print("[KS-Rivals] Hub Loaded. URL: "..SCRIPT_URL)
+print("[KS-Rivals] Hub Loaded. Auto Match Loop Active.")
