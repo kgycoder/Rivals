@@ -28,14 +28,6 @@ local aimLockConnection
 local lastClickTime = 0
 local CLICK_INTERVAL = 0.12
 
--- Key Name Formatter (MouseButton1 -> MB1)
-local function formatKeyName(key)
-    local name = tostring(key):split(".")[3]
-    name = name:gsub("MouseButton1", "MB1")
-    name = name:gsub("MouseButton2", "MB2")
-    return name
-end
-
 local function saveConfig()
     local config = {
         ESP_ENABLED = ESP_ENABLED,
@@ -144,7 +136,7 @@ TopBar.BackgroundTransparency = 1
 TopBar.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
-Title.Text = "KS-Rivals - Loop System Active"
+Title.Text = "KS-Rivals - Advanced Auto-Match System"
 Title.Font = Enum.Font.Code
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 13
@@ -221,8 +213,15 @@ AimTab.MouseButton1Click:Connect(function() ShowTab("Aim") end)
 VisualTab.MouseButton1Click:Connect(function() ShowTab("Visual") end)
 
 -- ============================================
--- UI COMPONENTS
+-- UI COMPONENTS (Toggle, Button)
 -- ============================================
+
+local function formatKeyName(enumItem)
+    local name = enumItem.Name
+    if name == "MouseButton1" then return "MB1" end
+    if name == "MouseButton2" then return "MB2" end
+    return name
+end
 
 local function CreateToggle(name, parent, callback, configType, defaultValue)
     local container = Instance.new("Frame")
@@ -310,6 +309,16 @@ local function CreateToggle(name, parent, callback, configType, defaultValue)
             configBtn.MouseButton1Click:Connect(function()
                 AUTO_AIM_MODE = (AUTO_AIM_MODE == "Silent") and "Aim" or "Silent"
                 configBtn.Text = AUTO_AIM_MODE
+                -- 11번 요청 사항 로직 적용
+                if AUTO_AIM_ENABLED then
+                    if AUTO_AIM_MODE == "Silent" then
+                        UIHandlers.UpdateSilentAim(true)
+                        UIHandlers.UpdateAimLock(false)
+                    else
+                        UIHandlers.UpdateSilentAim(false)
+                        UIHandlers.UpdateAimLock(true)
+                    end
+                end
                 saveConfig()
             end)
         elseif configType == "MatchMode" then
@@ -358,23 +367,23 @@ VisualList.Padding = UDim.new(0, 4)
 VisualList.Parent = VisualPage
 
 -- ============================================
--- AUTO MATCH SYSTEM (Modified for Loop)
+-- AUTO MATCH SYSTEM (Loop Execution)
 -- ============================================
 
-local function executeJoinQueue()
+local function attemptJoinMatch()
+    if not AUTO_MATCH_ENABLED then return end
     pcall(function()
         local args = { AUTO_MATCH_MODE }
         ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Matchmaking"):WaitForChild("JoinQueue"):InvokeServer(unpack(args))
     end)
 end
 
--- 1초마다 실행되는 무한 루프
+-- 1초마다 실행되는 루프 (ON 상태일 때 계속 작동)
 task.spawn(function()
-    while true do
+    while task.wait(1) do
         if AUTO_MATCH_ENABLED then
-            executeJoinQueue()
+            attemptJoinMatch()
         end
-        task.wait(1)
     end
 end)
 
@@ -552,7 +561,7 @@ for _, p in pairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
 -- ============================================
--- UI TO TOGGLE ASSIGNMENT
+-- UI TO TOGGLE ASSIGNMENT (Saving Connect)
 -- ============================================
 
 UIHandlers.UpdateSilentAim = CreateToggle("enabled (silent aim)", AimPage, function(v) SILENT_AIM_ENABLED = v end, nil, SILENT_AIM_ENABLED)
@@ -567,7 +576,7 @@ end, "AimMode", AUTO_AIM_ENABLED)
 
 UIHandlers.UpdateAutoMatch = CreateToggle("Auto Match", AimPage, function(v) 
     AUTO_MATCH_ENABLED = v
-    -- 루프에서 자동으로 감지하여 실행하므로 별도 호출 불필요
+    if v then attemptJoinMatch() end
 end, "MatchMode", AUTO_MATCH_ENABLED)
 
 CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v updateESPStates() end, nil, ESP_ENABLED)
@@ -590,7 +599,7 @@ CreateButton("mesh wrapping", VisualPage, function()
 end)
 
 -- ============================================
--- UI MANAGEMENT
+-- INITIAL EXECUTION & UI MANAGEMENT
 -- ============================================
 
 local dragging, dragStart, startPos
@@ -601,5 +610,11 @@ local function ToggleUI() MainFrame.Visible = not MainFrame.Visible end
 CloseBtn.MouseButton1Click:Connect(ToggleUI)
 UserInputService.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then ToggleUI() end end)
 
+-- 실행 초기 로직
+if AUTO_MATCH_ENABLED then attemptJoinMatch() end
+if AUTO_AIM_ENABLED then
+    if AUTO_AIM_MODE == "Silent" then UIHandlers.UpdateSilentAim(true) UIHandlers.UpdateAimLock(false)
+    else UIHandlers.UpdateSilentAim(false) UIHandlers.UpdateAimLock(true) end
+end
 ShowTab("Aim")
-print("[KS-Rivals] Hub Loaded. Auto Match Loop Active (1s). URL: " .. SCRIPT_URL)
+print("[KS-Rivals] Hub Active. Auto-Match Loop Started.")
