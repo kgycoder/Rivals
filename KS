@@ -1,21 +1,18 @@
--- KS-Rivals Script Hub (Enhanced Auto-Reload & Auto-Match Loop)
+-- KS-Rivals Script Hub (Enhanced Auto-Reload & Fixed Config System)
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local Camera = workspace.CurrentCamera
 
 -- ============================================
--- CONFIG & URL SETTINGS
+-- CONFIG SYSTEM (Global Variables)
 -- ============================================
-local SCRIPT_URL = "https://raw.githubusercontent.com/kgycoder/Rivals/refs/heads/main/KS"
 
--- 전역 상태 변수
 local ESP_ENABLED = false
 local SILENT_AIM_ENABLED = false
 local HP_BAR_ENABLED = false
@@ -31,7 +28,6 @@ local aimLockConnection
 local lastClickTime = 0
 local CLICK_INTERVAL = 0.12
 
--- 설정 저장 함수
 local function saveConfig()
     local config = {
         ESP_ENABLED = ESP_ENABLED,
@@ -43,23 +39,24 @@ local function saveConfig()
         AUTO_MATCH_ENABLED = AUTO_MATCH_ENABLED,
         AUTO_AIM_MODE = AUTO_AIM_MODE,
         AUTO_MATCH_MODE = AUTO_MATCH_MODE,
-        AIM_LOCK_KEY = tostring(AIM_LOCK_KEY)
+        AIM_LOCK_KEY = tostring(AIM_LOCK_KEY),
+        LAST_SERVER = game.JobId,
+        LAST_PLACE = game.PlaceId
     }
-    writefile("KSRivals_Config.json", HttpService:JSONEncode(config))
+    writefile("KSRivals_Config.json", game:GetService("HttpService"):JSONEncode(config))
 end
 
--- 설정 로드 함수
 local function loadConfig()
     if isfile("KSRivals_Config.json") then
         local success, result = pcall(function()
-            return HttpService:JSONDecode(readfile("KSRivals_Config.json"))
+            return game:GetService("HttpService"):JSONDecode(readfile("KSRivals_Config.json"))
         end)
         if success then return result end
     end
     return nil
 end
 
--- 설정 적용
+-- 설정 불러오기 및 변수 적용
 local savedConfig = loadConfig()
 if savedConfig then
     ESP_ENABLED = savedConfig.ESP_ENABLED or false
@@ -71,54 +68,48 @@ if savedConfig then
     AUTO_MATCH_ENABLED = savedConfig.AUTO_MATCH_ENABLED or false
     AUTO_AIM_MODE = savedConfig.AUTO_AIM_MODE or "Silent"
     AUTO_MATCH_MODE = savedConfig.AUTO_MATCH_MODE or "1v1"
+    
     if savedConfig.AIM_LOCK_KEY then
-        pcall(function()
-            if savedConfig.AIM_LOCK_KEY:find("MouseButton") then
-                AIM_LOCK_KEY = Enum.UserInputType[savedConfig.AIM_LOCK_KEY:split(".")[3]]
-            else
-                AIM_LOCK_KEY = Enum.KeyCode[savedConfig.AIM_LOCK_KEY:split(".")[3]]
-            end
-        end)
+        if savedConfig.AIM_LOCK_KEY:find("MouseButton") then
+            local keyName = savedConfig.AIM_LOCK_KEY:split(".")[3]
+            AIM_LOCK_KEY = Enum.UserInputType[keyName]
+        else
+            local keyName = savedConfig.AIM_LOCK_KEY:split(".")[3]
+            AIM_LOCK_KEY = Enum.KeyCode[keyName]
+        end
     end
 end
 
 -- ============================================
--- AUTO-RELOAD SYSTEM
+-- AUTO-RELOAD SYSTEM (Updated URL)
 -- ============================================
+
+local SCRIPT_URL = "https://raw.githubusercontent.com/kgycoder/Rivals/refs/heads/main/KS"
 local BOOTSTRAP_CODE = [[
 repeat task.wait() until game:IsLoaded()
 task.wait(2)
-pcall(function() loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))() end)
+local success, err = pcall(function()
+    loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
+end)
 ]]
 
 local function setupAutoReload()
     local qot = syn and syn.queue_on_teleport or queue_on_teleport or queueonteleport
     if qot then qot(BOOTSTRAP_CODE) end
 end
+
 setupAutoReload()
 LocalPlayer.OnTeleport:Connect(function(state)
-    if state == Enum.TeleportState.Started then saveConfig() setupAutoReload() end
-end)
-
--- ============================================
--- AUTO MATCH LOOP (1초마다 실행)
--- ============================================
-task.spawn(function()
-    while true do
-        if AUTO_MATCH_ENABLED then
-            pcall(function()
-                local args = { AUTO_MATCH_MODE }
-                ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Matchmaking"):WaitForChild("JoinQueue"):InvokeServer(unpack(args))
-            end)
-        end
-        task.wait(1) -- 1초 대기
+    if state == Enum.TeleportState.Started then
+        saveConfig()
+        setupAutoReload()
     end
 end)
 
 -- ============================================
--- UI SETUP & COMPONENTS
+-- UI SETUP
 -- ============================================
--- [기존 UI 생성 코드 유지 - 디자인/로직 수정 금지 원칙 준수]
+
 for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
     if gui.Name == "KSRivals_Hub" then gui:Destroy() end
 end
@@ -147,7 +138,7 @@ TopBar.BackgroundTransparency = 1
 TopBar.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
-Title.Text = "KS-Rivals - URL: KS / Auto-Match Active"
+Title.Text = "KS-Rivals - Configuration System Active"
 Title.Font = Enum.Font.Code
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 13
@@ -207,6 +198,8 @@ VisualPage.BackgroundTransparency = 1
 VisualPage.Visible = false
 VisualPage.Parent = Content
 
+local UIHandlers = {}
+
 local function ShowTab(tabName)
     if tabName == "Aim" then
         AimPage.Visible = true VisualPage.Visible = false
@@ -221,8 +214,11 @@ end
 AimTab.MouseButton1Click:Connect(function() ShowTab("Aim") end)
 VisualTab.MouseButton1Click:Connect(function() ShowTab("Visual") end)
 
--- [Toggle UI Logic - 수정 없이 유지하되, 초기값 로직만 변수에 맞춰 적용]
-local function CreateToggle(name, parent, callback, configType, initialValue)
+-- ============================================
+-- UI COMPONENTS (Toggle, Button)
+-- ============================================
+
+local function CreateToggle(name, parent, callback, configType, defaultValue)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, 24)
     container.BackgroundTransparency = 1
@@ -239,13 +235,14 @@ local function CreateToggle(name, parent, callback, configType, initialValue)
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Color = Color3.fromRGB(255, 255, 255)
     boxStroke.Thickness = 1
+    boxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     boxStroke.Parent = box
 
     local checkInner = Instance.new("Frame")
     checkInner.Size = UDim2.new(1, -4, 1, -4)
     checkInner.Position = UDim2.new(0, 2, 0, 2)
     checkInner.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    checkInner.Visible = initialValue or false
+    checkInner.Visible = (defaultValue == true)
     checkInner.BorderSizePixel = 0
     checkInner.Parent = box
 
@@ -260,7 +257,7 @@ local function CreateToggle(name, parent, callback, configType, initialValue)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = container
 
-    local enabled = initialValue or false
+    local enabled = defaultValue or false
     local function setEnabled(val)
         enabled = val
         checkInner.Visible = val
@@ -278,11 +275,14 @@ local function CreateToggle(name, parent, callback, configType, initialValue)
         configBtn.Font = Enum.Font.Code
         configBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         configBtn.TextSize = 11
+        configBtn.BorderSizePixel = 0
         configBtn.Parent = container
-        local s = Instance.new("UIStroke")
-        s.Color = Color3.fromRGB(255, 255, 255)
-        s.Thickness = 1
-        s.Parent = configBtn
+
+        local configStroke = Instance.new("UIStroke")
+        configStroke.Color = Color3.fromRGB(255, 255, 255)
+        configStroke.Thickness = 1
+        configStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        configStroke.Parent = configBtn
 
         if configType == "Keybind" then
             configBtn.Text = "[" .. (AIM_LOCK_KEY.Name) .. "]"
@@ -311,19 +311,38 @@ local function CreateToggle(name, parent, callback, configType, initialValue)
             local modes = {"1v1", "2v2", "3v3", "4v4", "5v5"}
             configBtn.MouseButton1Click:Connect(function()
                 local currentIndex = 1
-                for i, m in ipairs(modes) do if m == AUTO_MATCH_MODE then currentIndex = i break end end
-                AUTO_MATCH_MODE = modes[(currentIndex % #modes) + 1]
+                for i, mode in ipairs(modes) do
+                    if mode == AUTO_MATCH_MODE then currentIndex = i break end
+                end
+                local nextIndex = (currentIndex % #modes) + 1
+                AUTO_MATCH_MODE = modes[nextIndex]
                 configBtn.Text = AUTO_MATCH_MODE
                 saveConfig()
             end)
         end
     end
+    
     return setEnabled
 end
 
--- ============================================
--- UI LAYOUTS & HANDLERS
--- ============================================
+local function CreateButton(name, parent, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 140, 0, 26)
+    btn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    btn.Text = name
+    btn.Font = Enum.Font.Code
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 13
+    btn.BorderSizePixel = 0
+    btn.Parent = parent
+    local s = Instance.new("UIStroke")
+    s.Color = Color3.fromRGB(255, 255, 255)
+    s.Thickness = 1
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = btn
+    btn.MouseButton1Click:Connect(callback)
+end
+
 local AimList = Instance.new("UIListLayout")
 AimList.Padding = UDim.new(0, 4)
 AimList.Parent = AimPage
@@ -332,35 +351,247 @@ local VisualList = Instance.new("UIListLayout")
 VisualList.Padding = UDim.new(0, 4)
 VisualList.Parent = VisualPage
 
--- 메인 기능 버튼들 생성
-local UpdateSilentAim = CreateToggle("enabled (silent aim)", AimPage, function(v) SILENT_AIM_ENABLED = v end, nil, SILENT_AIM_ENABLED)
-local UpdateAimLock = CreateToggle("Aim Lock", AimPage, function(v) AIM_LOCK_ENABLED = v end, "Keybind", AIM_LOCK_ENABLED)
-local UpdateAutoAim = CreateToggle("Auto Aim", AimPage, function(v) 
+-- ============================================
+-- AUTO MATCH (1 SEC LOOP)
+-- ============================================
+
+local function joinMatchmaking()
+    pcall(function()
+        local args = { AUTO_MATCH_MODE }
+        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Matchmaking"):WaitForChild("JoinQueue"):InvokeServer(unpack(args))
+    end)
+end
+
+-- 1초마다 루프 실행 (토글이 ON일 때만 작동)
+task.spawn(function()
+    while task.wait(1) do
+        if AUTO_MATCH_ENABLED then
+            joinMatchmaking()
+        end
+    end
+end)
+
+-- ============================================
+-- NOTIFICATION SYSTEM
+-- ============================================
+
+local NotificationGui = Instance.new("ScreenGui")
+NotificationGui.Name = "NotificationSystem"
+NotificationGui.Parent = LocalPlayer.PlayerGui
+local NotifContainer = Instance.new("Frame")
+NotifContainer.Size = UDim2.new(0, 200, 0, 300)
+NotifContainer.Position = UDim2.new(0, 10, 0, 10)
+NotifContainer.BackgroundTransparency = 1
+NotifContainer.Parent = NotificationGui
+local NotifLayout = Instance.new("UIListLayout")
+NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+NotifLayout.Padding = UDim.new(0, 3)
+NotifLayout.Parent = NotifContainer
+
+local function createNotification(text, color)
+    if not NOTIFICATION_ENABLED then return end
+    local notif = Instance.new("Frame")
+    notif.Size = UDim2.new(1, 0, 0, 22)
+    notif.BackgroundColor3 = Color3.new(0, 0, 0)
+    notif.BackgroundTransparency = 0.3
+    notif.BorderSizePixel = 0
+    notif.Parent = NotifContainer
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -6, 1, 0)
+    label.Position = UDim2.new(0, 3, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = color or Color3.new(1, 1, 1)
+    label.TextSize = 12
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = notif
+    task.delay(1.5, function() if notif then notif:Destroy() end end)
+end
+
+-- ============================================
+-- AIM LOGIC
+-- ============================================
+
+local function getClosestPlayer()
+    local closest, shortestDist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+            local head = p.Character.Head
+            local _, onScreen = Camera:WorldToScreenPoint(head.Position)
+            if onScreen then
+                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - head.Position).Magnitude
+                if dist < shortestDist then shortestDist = dist closest = p end
+            end
+        end
+    end
+    return closest
+end
+
+local function updateAimLock()
+    if not isAimLockHeld or not AIM_LOCK_ENABLED then return end
+    local t = getClosestPlayer()
+    if t and t.Character:FindFirstChild("Head") then
+        local pos = Camera:WorldToScreenPoint(t.Character.Head.Position)
+        mousemoverel(math.floor(pos.X - Mouse.X + 0.5), math.floor(pos.Y - Mouse.Y + 0.5))
+    end
+end
+
+UserInputService.InputBegan:Connect(function(i, gpe)
+    if not gpe and AIM_LOCK_ENABLED and (i.KeyCode == AIM_LOCK_KEY or i.UserInputType == AIM_LOCK_KEY) then
+        isAimLockHeld = true
+        if aimLockConnection then aimLockConnection:Disconnect() end
+        aimLockConnection = RunService.RenderStepped:Connect(updateAimLock)
+    elseif not gpe and SILENT_AIM_ENABLED and i.UserInputType == Enum.UserInputType.MouseButton1 then
+        local t = getClosestPlayer()
+        if t then Camera.CFrame = CFrame.new(Camera.CFrame.Position, t.Character.Head.Position) end
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.KeyCode == AIM_LOCK_KEY or i.UserInputType == AIM_LOCK_KEY then
+        isAimLockHeld = false
+        if aimLockConnection then aimLockConnection:Disconnect() aimLockConnection = nil end
+    end
+end)
+
+local function isVisible(p)
+    if not p.Character or not p.Character:FindFirstChild("HumanoidRootPart") then return false end
+    local hrp = p.Character.HumanoidRootPart
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, p.Character}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    local res = workspace:Raycast(Camera.CFrame.Position, hrp.Position - Camera.CFrame.Position, rayParams)
+    return not res
+end
+
+RunService.RenderStepped:Connect(function()
+    if not AUTO_AIM_ENABLED or MainFrame.Visible then return end
+    local targetFound = false
+    if AUTO_AIM_MODE == "Silent" then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and isVisible(p) then targetFound = true break end
+        end
+    elseif AUTO_AIM_MODE == "Aim" then
+        local target = Mouse.Target
+        if target and target.Parent then
+            local char = target.Parent:IsA("Model") and target.Parent or target.Parent.Parent
+            local player = Players:GetPlayerFromCharacter(char)
+            if player and player ~= LocalPlayer and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+                targetFound = true
+            end
+        end
+    end
+    if targetFound then
+        local cur = tick()
+        if cur - lastClickTime >= CLICK_INTERVAL then
+            lastClickTime = cur
+            VirtualInputManager:SendMouseButtonEvent(Mouse.X, Mouse.Y, 0, true, game, 0)
+            task.wait(0.01)
+            VirtualInputManager:SendMouseButtonEvent(Mouse.X, Mouse.Y, 0, false, game, 0)
+        end
+    end
+end)
+
+-- ============================================
+-- VISUAL/ESP LOGIC
+-- ============================================
+
+local function updateESPStates()
+    for _,p in pairs(Players:GetPlayers()) do
+        local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+        if r then
+            local g = r:FindFirstChild("ESP_Gui")
+            if g then g.Enabled = ESP_ENABLED end
+            local h = r:FindFirstChild("HealthESP_Gui")
+            if h then h.Enabled = HP_BAR_ENABLED end
+        end
+    end
+end
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    local function onChar(char)
+        local root = char:WaitForChild("HumanoidRootPart", 5)
+        local hum = char:WaitForChild("Humanoid", 5)
+        if not root or not hum then return end
+        
+        local bGui = Instance.new("BillboardGui", root)
+        bGui.Name = "ESP_Gui" bGui.Size = UDim2.new(4,0,5.5,0) bGui.AlwaysOnTop = true bGui.Enabled = ESP_ENABLED
+        local function line(s, p)
+            local f = Instance.new("Frame", bGui) f.BackgroundColor3 = Color3.new(1,1,1) f.BorderSizePixel = 0 f.Size = s f.Position = p return f
+        end
+        line(UDim2.new(1,0,0,1), UDim2.new(0,0,0,0))
+        line(UDim2.new(1,0,0,1), UDim2.new(0,0,1,-1))
+        line(UDim2.new(0,1,1,0), UDim2.new(0,0,0,0))
+        line(UDim2.new(0,1,1,0), UDim2.new(1,-1,0,0))
+
+        local hGui = Instance.new("BillboardGui", root)
+        hGui.Name = "HealthESP_Gui" hGui.Size = UDim2.new(1,0,5.5,0) hGui.StudsOffset = Vector3.new(2.5,0,0) hGui.AlwaysOnTop = true hGui.Enabled = HP_BAR_ENABLED
+        local barBg = Instance.new("Frame", hGui) barBg.Size = UDim2.new(0.2,0,1,0) barBg.BackgroundColor3 = Color3.fromRGB(50,50,50) barBg.BorderSizePixel = 0
+        local hFill = Instance.new("Frame", barBg) hFill.Size = UDim2.new(1,0,1,0) hFill.Position = UDim2.new(0,0,1,0) hFill.AnchorPoint = Vector2.new(0,1) hFill.BackgroundColor3 = Color3.fromRGB(0,255,0) hFill.BorderSizePixel = 0
+        local hText = Instance.new("TextLabel", barBg) hText.Size = UDim2.new(3,0,0.2,0) hText.Position = UDim2.new(1.2,0,0,0) hText.BackgroundTransparency = 1 hText.TextColor3 = Color3.new(1,1,1) hText.TextScaled = true hText.Font = Enum.Font.SourceSansBold
+
+        local function update()
+            local p = math.clamp(hum.Health/hum.MaxHealth, 0, 1)
+            hFill.Size = UDim2.new(1,0,p,0) hFill.BackgroundColor3 = Color3.fromHSV(p*0.3, 1, 1)
+            hText.Text = math.floor(hum.Health).."/"..math.floor(hum.MaxHealth)
+        end
+        hum.HealthChanged:Connect(update)
+        update()
+    end
+    player.CharacterAdded:Connect(onChar) if player.Character then onChar(player.Character) end
+end
+for _, p in pairs(Players:GetPlayers()) do createESP(p) end
+Players.PlayerAdded:Connect(createESP)
+
+-- ============================================
+-- UI TOGGLE ASSIGNMENT (Saving Connect)
+-- ============================================
+
+UIHandlers.UpdateSilentAim = CreateToggle("enabled (silent aim)", AimPage, function(v) SILENT_AIM_ENABLED = v end, nil, SILENT_AIM_ENABLED)
+UIHandlers.UpdateAimLock = CreateToggle("Aim Lock", AimPage, function(v) AIM_LOCK_ENABLED = v end, "Keybind", AIM_LOCK_ENABLED)
+UIHandlers.UpdateAutoAim = CreateToggle("Auto Aim", AimPage, function(v) 
     AUTO_AIM_ENABLED = v 
     if v then
-        if AUTO_AIM_MODE == "Silent" then UpdateSilentAim(true) UpdateAimLock(false)
-        else UpdateSilentAim(false) UpdateAimLock(true) end
+        if AUTO_AIM_MODE == "Silent" then SILENT_AIM_ENABLED = true else AIM_LOCK_ENABLED = true end
     end
 end, "AimMode", AUTO_AIM_ENABLED)
 
-local UpdateAutoMatch = CreateToggle("Auto Match", AimPage, function(v) 
+UIHandlers.UpdateAutoMatch = CreateToggle("Auto Match", AimPage, function(v) 
     AUTO_MATCH_ENABLED = v
+    if v then joinMatchmaking() end
 end, "MatchMode", AUTO_MATCH_ENABLED)
 
--- 비주얼 기능 버튼들 생성
-CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v end, nil, ESP_ENABLED)
-CreateToggle("HP bar", VisualPage, function(v) HP_BAR_ENABLED = v end, nil, HP_BAR_ENABLED)
+CreateToggle("enabled (esp)", VisualPage, function(v) ESP_ENABLED = v updateESPStates() end, nil, ESP_ENABLED)
+CreateToggle("HP bar", VisualPage, function(v) HP_BAR_ENABLED = v updateESPStates() end, nil, HP_BAR_ENABLED)
 CreateToggle("Notification", VisualPage, function(v) NOTIFICATION_ENABLED = v end, nil, NOTIFICATION_ENABLED)
 
--- [디자인 유지: 드래그/종료 로직]
+CreateButton("mesh wrapping", VisualPage, function()
+    local VM = workspace:FindFirstChild("ViewModels")
+    local FP = VM and VM:FindFirstChild("FirstPerson")
+    if not FP then return end
+    local function setup(m)
+        if not m:IsA("MeshPart") then return end
+        m.Material, m.Color = Enum.Material.ForceField, Color3.new(0,0,0)
+        for _, f in ipairs({Enum.NormalId.Top, Enum.NormalId.Bottom, Enum.NormalId.Left, Enum.NormalId.Right, Enum.NormalId.Front, Enum.NormalId.Back}) do
+            local t = m:FindFirstChild("FixedTexture_"..f.Name) or Instance.new("Texture", m)
+            t.Name, t.Texture, t.Face, t.Color3, t.StudsPerTileU, t.StudsPerTileV = "FixedTexture_"..f.Name, "rbxassetid://135989547473439", f, Color3.new(0,0,0), 0.1, 0.1
+        end
+    end
+    for _, o in ipairs(FP:GetDescendants()) do setup(o) end
+end)
+
+-- ============================================
+-- UI MANAGEMENT (Drag & Toggle)
+-- ============================================
+
 local dragging, dragStart, startPos
 MainFrame.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true dragStart = input.Position startPos = MainFrame.Position end end)
 UserInputService.InputChanged:Connect(function(input) if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then local delta = input.Position - dragStart MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end end)
 UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
-CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
-UserInputService.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then MainFrame.Visible = not MainFrame.Visible end end)
+local function ToggleUI() MainFrame.Visible = not MainFrame.Visible end
+CloseBtn.MouseButton1Click:Connect(ToggleUI)
+UserInputService.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then ToggleUI() end end)
 
--- [기존 Aim/ESP/Notification 로직은 내부적으로 전역 변수를 참조하므로 그대로 유지]
--- (공간상 생략했으나 원본의 모든 함수와 RenderStepped 연결이 포함되어야 함)
-
-print("KS-Rivals Loaded. URL: KS / Auto-Match Loop: 1s")
+ShowTab("Aim")
+print("[KS-Rivals] Hub Loaded. URL: "..SCRIPT_URL)
